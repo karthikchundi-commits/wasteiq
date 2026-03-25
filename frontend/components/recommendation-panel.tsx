@@ -81,25 +81,34 @@ export default function RecommendationPanel({ report }: Props) {
       {report.total_flat_buffer_cost != null && report.total_ai_recommended_cost != null && (
         <div className="card">
           <p className="text-sm font-medium text-gray-700 mb-3">Cost comparison vs industry flat 15% buffer</p>
-          <div className="space-y-2">
+          <div className="space-y-3">
+            {/* Industry buffer row — always full width reference */}
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-500 w-32">Industry buffer</span>
-              <div className="flex-1 bg-red-100 rounded-full h-4 flex items-center px-2">
-                <span className="text-xs text-red-700 font-medium">{fmt(report.total_flat_buffer_cost)}</span>
+              <span className="text-xs text-gray-500 w-28 shrink-0">Industry 15%</span>
+              <div className="flex-1 bg-red-100 rounded-full h-5 flex items-center px-2.5">
+                <span className="text-xs text-red-700 font-semibold">{fmt(report.total_flat_buffer_cost)}</span>
               </div>
             </div>
+            {/* WasteIQ row — proportional to flat buffer */}
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-500 w-32">WasteIQ AI</span>
-              <div
-                className="bg-green-400 rounded-full h-4 flex items-center px-2"
-                style={{
-                  width: `${Math.max(20, ((report.total_ai_recommended_cost / report.total_flat_buffer_cost) * 100))}%`
-                }}
-              >
-                <span className="text-xs text-white font-medium">{fmt(report.total_ai_recommended_cost)}</span>
+              <span className="text-xs text-gray-500 w-28 shrink-0">WasteIQ AI</span>
+              <div className="flex-1 relative h-5">
+                <div
+                  className="absolute left-0 top-0 h-5 bg-green-400 rounded-full flex items-center px-2.5 min-w-fit"
+                  style={{
+                    width: `${Math.max(15, Math.min(100, (report.total_ai_recommended_cost / report.total_flat_buffer_cost) * 100))}%`
+                  }}
+                >
+                  <span className="text-xs text-white font-semibold whitespace-nowrap">{fmt(report.total_ai_recommended_cost)}</span>
+                </div>
               </div>
             </div>
           </div>
+          {report.total_savings_amount != null && report.total_savings_amount > 0 && (
+            <p className="text-xs text-green-600 font-medium mt-3">
+              You save {fmt(report.total_savings_amount)} ({report.total_savings_pct?.toFixed(1)}% less) by using AI-optimized quantities
+            </p>
+          )}
         </div>
       )}
 
@@ -149,12 +158,32 @@ export default function RecommendationPanel({ report }: Props) {
         ))}
       </div>
 
-      {report.actuals_recorded > 0 && report.avg_prediction_error_pct != null && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700">
-          Model accuracy on this project: avg error {report.avg_prediction_error_pct.toFixed(1)}% across {report.actuals_recorded} recorded actuals.
-          {report.avg_prediction_error_pct < 3 && " Excellent accuracy."}
+      {/* Model evidence footer */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 space-y-1.5">
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Model Evidence</p>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
+          <span>
+            <span className="font-medium text-gray-700">Actuals recorded:</span>{" "}
+            {report.actuals_recorded} material{report.actuals_recorded !== 1 ? "s" : ""}
+          </span>
+          {report.avg_prediction_error_pct != null ? (
+            <span>
+              <span className="font-medium text-gray-700">Avg prediction error:</span>{" "}
+              <span className={report.avg_prediction_error_pct < 3 ? "text-green-600 font-semibold" : report.avg_prediction_error_pct < 6 ? "text-amber-600" : "text-red-600"}>
+                {report.avg_prediction_error_pct.toFixed(1)}%
+                {report.avg_prediction_error_pct < 3 ? " — excellent" : report.avg_prediction_error_pct < 6 ? " — good" : " — improving"}
+              </span>
+            </span>
+          ) : (
+            <span className="text-gray-400">Record actuals to measure prediction accuracy</span>
+          )}
         </div>
-      )}
+        <p className="text-xs text-gray-400">
+          {report.actuals_recorded === 0
+            ? "These recommendations are based on the global model trained on industry-wide construction data. Record actual waste after each phase to personalise predictions to your company."
+            : `These recommendations incorporate ${report.actuals_recorded} actual waste measurement${report.actuals_recorded !== 1 ? "s" : ""} from this project. Each recorded actual improves future predictions.`}
+        </p>
+      </div>
     </div>
   );
 }

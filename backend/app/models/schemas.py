@@ -127,6 +127,7 @@ class PredictionSummary(BaseModel):
     recommended_order_qty: float
     predicted_waste_cost: Optional[float]
     top_drivers: List[dict] = []
+    model_version: Optional[str] = None
 
 
 # --- Actuals ---

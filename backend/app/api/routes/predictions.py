@@ -102,6 +102,7 @@ def generate_predictions(
             recommended_order_qty=result["recommended_order_qty"],
             predicted_waste_cost=predicted_waste_cost,
             top_drivers=result["shap_values"] or [],
+            model_version=result["model_version"],
         ))
 
     db.commit()
@@ -146,6 +147,7 @@ def get_predictions(
             recommended_order_qty=pred.recommended_order_qty,
             predicted_waste_cost=predicted_waste_cost,
             top_drivers=pred.shap_values or [],
+            model_version=pred.model_version,
         ))
 
     return results
