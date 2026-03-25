@@ -57,6 +57,11 @@ export const oracleApi = {
     api.post("oracle/push-requisition", { project_id, ...opts }),
 };
 
+// --- Analytics ---
+export const analyticsApi = {
+  overview: () => api.get("analytics/overview"),
+};
+
 // --- Procurement Middleware ---
 export const procurementApi = {
   stage: (project_id: string, opts?: {
