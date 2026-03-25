@@ -59,7 +59,7 @@ export default function NewProjectPage() {
     setError("");
     setLoading(true);
 
-    const phases = [...new Set(materials.map((m) => m.phase_name))].map((phase_name) => ({
+    const phases = Array.from(new Set(materials.map((m) => m.phase_name))).map((phase_name) => ({
       phase_name,
     }));
 
