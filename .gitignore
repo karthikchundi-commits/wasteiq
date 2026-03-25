@@ -12,7 +12,7 @@ ml_models/
 node_modules/
 .next/
 .env.local
-.env.production
+# .env.production is intentionally committed (contains only public API URL)
 
 # OS
 .DS_Store
