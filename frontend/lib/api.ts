@@ -1,8 +1,9 @@
 import axios from "axios";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// All API calls go through Next.js rewrites (/api-proxy → backend).
+// This avoids CORS entirely — browser talks to same origin.
+const BASE_URL = "/api-proxy";
 
-// Expose for debugging — visible in dashboard error message
 export const API_BASE_URL = BASE_URL;
 
 export const api = axios.create({ baseURL: BASE_URL });
