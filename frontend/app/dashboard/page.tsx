@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/navbar";
-import { projectsApi } from "@/lib/api";
+import { projectsApi, API_BASE_URL } from "@/lib/api";
 import { isAuthenticated } from "@/lib/auth";
 
 interface Project {
@@ -49,7 +49,7 @@ export default function DashboardPage() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">
-            API error: {error}
+            API error: {error} — calling: {API_BASE_URL}
           </div>
         )}
 

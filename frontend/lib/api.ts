@@ -2,6 +2,9 @@ import axios from "axios";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Expose for debugging — visible in dashboard error message
+export const API_BASE_URL = BASE_URL;
+
 export const api = axios.create({ baseURL: BASE_URL });
 
 // Attach JWT token from localStorage to every request
