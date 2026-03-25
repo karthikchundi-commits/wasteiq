@@ -1,8 +1,8 @@
 import axios from "axios";
 
-// All API calls go through Next.js rewrites (/api-proxy → backend).
-// This avoids CORS entirely — browser talks to same origin.
-const BASE_URL = "/api-proxy";
+// All API calls go through a Next.js API route (/api/proxy → backend).
+// This avoids CORS and explicitly forwards the Authorization header.
+const BASE_URL = "/api/proxy";
 
 export const API_BASE_URL = BASE_URL;
 
