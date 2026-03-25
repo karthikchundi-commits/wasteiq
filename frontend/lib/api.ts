@@ -45,3 +45,14 @@ export const actualsApi = {
     api.post("actuals/", data),
   getByProject: (project_id: string) => api.get(`actuals/project/${project_id}`),
 };
+
+// --- Recommendations ---
+export const recommendationsApi = {
+  get: (project_id: string) => api.get(`recommendations/${project_id}`),
+};
+
+// --- Oracle Fusion ---
+export const oracleApi = {
+  pushRequisition: (project_id: string, opts?: { requester_name?: string; deliver_to_location?: string; need_by_date?: string }) =>
+    api.post("oracle/push-requisition", { project_id, ...opts }),
+};

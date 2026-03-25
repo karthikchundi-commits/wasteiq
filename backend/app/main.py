@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from app.api.routes import auth, projects, predictions, actuals
+from app.api.routes import auth, projects, predictions, actuals, recommendations, oracle
 from app.config import settings
 
 
@@ -41,6 +41,8 @@ app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(predictions.router)
 app.include_router(actuals.router)
+app.include_router(recommendations.router)
+app.include_router(oracle.router)
 
 
 @app.get("/health")
