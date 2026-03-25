@@ -1,0 +1,9 @@
+# Full dev requirements including ML training packages
+# Use this locally: pip install -r requirements-dev.txt
+-r requirements.txt
+xgboost==2.0.3
+scikit-learn==1.4.2
+shap==0.45.0
+pandas==2.2.2
+celery==5.4.0
+redis==5.0.4
