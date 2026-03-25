@@ -20,12 +20,13 @@ export default function DashboardPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated()) { router.push("/login"); return; }
     projectsApi.list()
       .then((res) => setProjects(res.data))
-      .catch(() => {})
+      .catch((err) => setError(err?.response?.data?.detail || err?.message || "Failed to load projects"))
       .finally(() => setLoading(false));
   }, [router]);
 
@@ -45,6 +46,12 @@ export default function DashboardPage() {
           </div>
           <Link href="/projects/new" className="btn-primary">+ New Project</Link>
         </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">
+            API error: {error}
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-8">

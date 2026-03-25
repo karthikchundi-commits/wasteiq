@@ -23,6 +23,7 @@ app = FastAPI(title="WasteIQ API", version="1.0.0", lifespan=lifespan)
 allowed_origins = [
     "http://localhost:3000",
     "https://localhost:3000",
+    "https://wasteiqfrontend.vercel.app",
 ]
 if settings.frontend_url:
     allowed_origins.append(settings.frontend_url)
