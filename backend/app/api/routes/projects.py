@@ -1,21 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import List
 
 from app.database import get_db
 from app.api.routes.auth import get_current_user
 from app.models.db_models import (
-    User, Project, ProjectPhase, MaterialLineItem, CrewProfile
+    User, Project, ProjectPhase, MaterialLineItem, CrewProfile,
+    WastePrediction, WasteActual
 )
 from app.models.schemas import ProjectCreate, ProjectOut, CrewProfileCreate, CrewProfileOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+# Reusable eager-load option — loads materials + their prediction/actual in one query
+_PROJECT_LOAD = [
+    selectinload(Project.materials).selectinload(MaterialLineItem.prediction),
+    selectinload(Project.materials).selectinload(MaterialLineItem.actual),
+]
 
 
 @router.get("/", response_model=List[ProjectOut])
 def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return (
         db.query(Project)
+        .options(*_PROJECT_LOAD)
         .filter(Project.company_id == current_user.company_id)
         .order_by(Project.created_at.desc())
         .all()
@@ -39,7 +47,6 @@ def create_project(
     db.add(project)
     db.flush()
 
-    # Create phases
     phase_map = {}
     for p in payload.phases:
         phase = ProjectPhase(
@@ -52,7 +59,6 @@ def create_project(
         db.flush()
         phase_map[p.phase_name] = phase.id
 
-    # Create material line items
     for m in payload.materials:
         phase_id = phase_map.get(m.phase_name) if m.phase_name else None
         mat = MaterialLineItem(
@@ -67,8 +73,14 @@ def create_project(
         db.add(mat)
 
     db.commit()
-    db.refresh(project)
-    return project
+
+    # Re-fetch with eager loads so response serializes cleanly
+    return (
+        db.query(Project)
+        .options(*_PROJECT_LOAD)
+        .filter(Project.id == project.id)
+        .first()
+    )
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -77,10 +89,15 @@ def get_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.company_id == current_user.company_id,
-    ).first()
+    project = (
+        db.query(Project)
+        .options(*_PROJECT_LOAD)
+        .filter(
+            Project.id == project_id,
+            Project.company_id == current_user.company_id,
+        )
+        .first()
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
