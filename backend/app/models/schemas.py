@@ -70,7 +70,7 @@ class WastePredictionOut(BaseModel):
     ci_high: float
     recommended_order_qty: float
     model_version: Optional[str]
-    shap_values: Optional[dict]
+    shap_values: Optional[List[dict]]
 
     class Config:
         from_attributes = True
