@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,12 +6,20 @@ from app.database import Base, engine
 from app.api.routes import auth, projects, predictions, actuals
 from app.config import settings
 
-# Create all tables on startup
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="WasteIQ API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create tables on first startup — wrapped so a DB error doesn't
+    # prevent the health endpoint from responding
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"DB init warning: {e}")
+    yield
 
-# Allow localhost for development + any Vercel preview/production URLs
+
+app = FastAPI(title="WasteIQ API", version="1.0.0", lifespan=lifespan)
+
 allowed_origins = [
     "http://localhost:3000",
     "https://localhost:3000",
@@ -21,7 +30,7 @@ if settings.frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # covers all preview deployments
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
