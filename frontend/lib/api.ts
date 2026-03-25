@@ -44,7 +44,21 @@ export const actualsApi = {
   record: (data: { material_line_item_id: string; actual_waste_qty: number; notes?: string }) =>
     api.post("actuals/", data),
   getByProject: (project_id: string) => api.get(`actuals/project/${project_id}`),
+  importHistorical: (records: HistoricalRecord[]) => api.post("actuals/import-historical", records),
 };
+
+export interface HistoricalRecord {
+  material_type: string;
+  phase_name: string;
+  project_type?: string;
+  crew_size: number;
+  avg_experience_years: number;
+  location?: string;
+  estimated_quantity: number;
+  unit: string;
+  actual_waste_qty: number;
+  notes?: string;
+}
 
 // --- Recommendations ---
 export const recommendationsApi = {

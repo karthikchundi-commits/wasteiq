@@ -9,12 +9,17 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on first startup — wrapped so a DB error doesn't
-    # prevent the health endpoint from responding
+    # Create tables on first startup
     try:
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"DB init warning: {e}")
+    # Train base model if not already present
+    try:
+        from app.ml.trainer import ensure_base_model
+        ensure_base_model()
+    except Exception as e:
+        print(f"Base model init warning: {e}")
     yield
 
 

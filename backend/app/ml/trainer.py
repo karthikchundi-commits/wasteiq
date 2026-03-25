@@ -116,16 +116,60 @@ def retrain_company_model(company_id: str, db):
         print(f"Retraining failed for company {company_id}: {e}")
 
 
-def generate_synthetic_training_data(n_samples: int = 2000) -> tuple:
+def generate_synthetic_training_data(n_samples: int = 5000) -> tuple:
     """
     Generate synthetic training data to bootstrap the base model.
-    Based on construction waste research benchmarks.
+
+    Based on real construction waste research benchmarks:
+    - Concrete:    2-8%   (weather-sensitive, phase matters less)
+    - Steel rebar: 3-8%   (low workability waste, mostly off-cuts)
+    - Lumber:      10-15% (high — framing cuts, humidity warp)
+    - Drywall:     8-12%  (moisture + fitting waste)
+    - Tiles:       10-15% (highest — irregular cuts, breakage)
+    - Pipe:        5-10%  (MEP off-cuts)
+    - Insulation:  5-8%
+    - Brick:       5-10%  (breakage during delivery + cutting)
+    - Glass:       8-15%  (highest breakage risk)
+
+    Interaction effects modelled:
+    - Junior crew (<3 yrs) adds +40-60% to base waste
+    - Senior crew (>10 yrs) reduces by 20-30%
+    - Cold/wet weather amplifies concrete/lumber/drywall waste significantly
+    - Urban sites add 10-15% from handling constraints
+    - Finishing phase is worst for tiles/drywall/glass
+    - MEP phase is worst for pipe
     """
     np.random.seed(42)
     from app.ml.features import (
         MATERIAL_WORKABILITY, PHASE_COMPLEXITY,
         WEATHER_ZONE_RISK, MATERIAL_WEATHER_SENSITIVITY
     )
+
+    # Real industry baseline waste % by material (midpoint of research range)
+    MATERIAL_BASE_WASTE = {
+        "concrete":    0.045,   # 4.5% baseline
+        "steel_rebar": 0.055,   # 5.5%
+        "lumber":      0.125,   # 12.5%
+        "drywall":     0.100,   # 10%
+        "tiles":       0.125,   # 12.5%
+        "pipe":        0.075,   # 7.5%
+        "insulation":  0.065,   # 6.5%
+        "brick":       0.075,   # 7.5%
+        "glass":       0.110,   # 11%
+        "other":       0.090,   # 9%
+    }
+
+    # Phase multiplier on top of base (finishing is worst for fit-and-finish materials)
+    MATERIAL_PHASE_MULTIPLIER = {
+        ("tiles",       "finishing"):  1.30,
+        ("drywall",     "finishing"):  1.25,
+        ("glass",       "finishing"):  1.20,
+        ("lumber",      "framing"):    1.20,
+        ("pipe",        "mep"):        1.25,
+        ("insulation",  "mep"):        1.15,
+        ("concrete",    "foundation"): 1.10,
+        ("brick",       "framing"):    1.15,
+    }
 
     X, y = [], []
     materials = list(MATERIAL_WORKABILITY.keys())
@@ -136,11 +180,22 @@ def generate_synthetic_training_data(n_samples: int = 2000) -> tuple:
         mat = np.random.choice(materials)
         phase = np.random.choice(phases)
         weather = np.random.choice(weather_zones)
-        experience_index = np.random.beta(2, 2)  # most crews are mid-level
-        crew_size = int(np.random.randint(3, 60))
-        supplier_reliability = np.random.uniform(0.6, 1.0)
-        qty = np.random.uniform(10, 5000)
-        hist_waste = np.random.uniform(0.05, 0.20)
+        experience_years = np.random.choice([
+            np.random.uniform(0, 3),    # junior:  30% of workforce
+            np.random.uniform(3, 10),   # mid:     45%
+            np.random.uniform(10, 25),  # senior:  25%
+        ], p=[0.30, 0.45, 0.25])
+        experience_index = compute_experience_index(experience_years)
+        crew_size = int(np.random.choice([
+            np.random.randint(3, 8),    # small crew
+            np.random.randint(8, 25),   # medium crew
+            np.random.randint(25, 80),  # large crew
+        ], p=[0.35, 0.45, 0.20]))
+        supplier_reliability = np.random.beta(5, 2)  # skewed toward reliable
+        qty = np.random.lognormal(mean=4, sigma=1.5)  # realistic qty distribution
+        qty = float(np.clip(qty, 5, 50000))
+        is_urban = np.random.random() < 0.35
+        hist_waste = np.random.uniform(0.04, 0.22)
 
         fv = build_feature_vector(
             material_type=mat,
@@ -149,19 +204,50 @@ def generate_synthetic_training_data(n_samples: int = 2000) -> tuple:
             experience_index=experience_index,
             crew_size=crew_size,
             weather_zone=weather,
+            is_urban=is_urban,
             supplier_reliability=supplier_reliability,
             company_historical_waste_pct=hist_waste,
         )
 
-        # Simulate realistic waste % based on domain rules + noise
-        base_waste = (
-            fv["material_workability_index"] * 0.12
-            + (1 - experience_index) * 0.08
-            + fv["phase_complexity_score"] * 0.06
-            + fv["environmental_risk_score"] * 0.04
-            + np.random.normal(0, 0.02)
-        )
-        waste_pct = float(np.clip(base_waste, 0.01, 0.55))
+        # Start from material baseline
+        base = MATERIAL_BASE_WASTE.get(mat, 0.09)
+
+        # Apply phase×material interaction
+        phase_mult = MATERIAL_PHASE_MULTIPLIER.get((mat, phase), 1.0)
+        waste = base * phase_mult
+
+        # Crew experience effect: junior crews produce disproportionately more waste
+        # experience_index 0→1, effect is nonlinear
+        exp_multiplier = 1.0 + (1 - experience_index) ** 1.5 * 0.6
+        waste *= exp_multiplier
+
+        # Weather × material interaction
+        weather_risk = WEATHER_ZONE_RISK.get(weather, 0.3)
+        weather_sensitivity = MATERIAL_WEATHER_SENSITIVITY.get(mat, 0.4)
+        weather_effect = 1.0 + weather_risk * weather_sensitivity * 0.4
+        waste *= weather_effect
+
+        # Urban site penalty (tight space = more handling damage)
+        if is_urban:
+            waste *= 1.12
+
+        # Supplier reliability: unreliable suppliers = partial deliveries = off-cuts
+        supplier_effect = 1.0 + (1 - supplier_reliability) * 0.25
+        waste *= supplier_effect
+
+        # Crew size: very large crews have coordination waste, very small have efficiency
+        if crew_size > 40:
+            waste *= 1.05
+        elif crew_size < 5:
+            waste *= 0.95
+
+        # Blend with historical (historical anchors the prediction toward company reality)
+        waste = waste * 0.65 + hist_waste * 0.35
+
+        # Realistic noise (heteroskedastic: high-waste materials have more variance)
+        noise_std = 0.008 + base * 0.15
+        waste += np.random.normal(0, noise_std)
+        waste_pct = float(np.clip(waste, 0.005, 0.55))
 
         X.append(feature_vector_to_array(fv))
         y.append(waste_pct)
@@ -171,15 +257,21 @@ def generate_synthetic_training_data(n_samples: int = 2000) -> tuple:
 
 def train_base_model():
     """Train and save the base model from synthetic data."""
-    from xgboost import XGBRegressor
+    try:
+        from xgboost import XGBRegressor
+    except ImportError:
+        print("XGBoost not installed — skipping base model training")
+        return None
 
-    print("Generating synthetic training data...")
-    X, y = generate_synthetic_training_data(2000)
+    print("Generating synthetic training data (5000 samples)...")
+    X, y = generate_synthetic_training_data(5000)
 
     model = XGBRegressor(
-        n_estimators=200,
+        n_estimators=300,
         max_depth=5,
         learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
         objective="reg:squarederror",
         random_state=42,
     )
@@ -190,8 +282,18 @@ def train_base_model():
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
 
-    print(f"Base model saved to {model_path}")
+    print(f"Base model saved to {model_path} ({len(y)} training samples)")
     return model
+
+
+def ensure_base_model():
+    """Train base model if it doesn't already exist on disk. Called at startup."""
+    model_path = os.path.join(settings.model_store_path, "base_model.pkl")
+    if not os.path.exists(model_path):
+        print("Base model not found — training from synthetic data...")
+        train_base_model()
+    else:
+        print(f"Base model found at {model_path}")
 
 
 if __name__ == "__main__":

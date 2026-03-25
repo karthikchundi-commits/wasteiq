@@ -23,6 +23,9 @@ export default function Navbar() {
         <Link href="/analytics" className="text-sm text-gray-600 hover:text-gray-900">
           Analytics
         </Link>
+        <Link href="/projects/import" className="text-sm text-gray-600 hover:text-gray-900">
+          Import Data
+        </Link>
         <Link href="/projects/new" className="btn-primary text-sm py-1.5">
           + New Project
         </Link>
