@@ -183,3 +183,73 @@ class ModelFeedbackLog(Base):
     retrain_date = Column(DateTime)
 
     actual = relationship("WasteActual", back_populates="feedback_log")
+
+
+# ── Procurement Middleware ─────────────────────────────────────────────────────
+
+class RequisitionStatus(str, enum.Enum):
+    draft = "draft"
+    reviewed = "reviewed"
+    pushed = "pushed"
+    failed = "failed"
+
+
+class ERPType(str, enum.Enum):
+    oracle_fusion = "oracle_fusion"
+    sap = "sap"
+    ms_dynamics = "ms_dynamics"
+    custom = "custom"
+
+
+class ProcurementRequisition(Base):
+    __tablename__ = "procurement_requisitions"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False)
+    status = Column(Enum(RequisitionStatus), default=RequisitionStatus.draft)
+    erp_type = Column(Enum(ERPType), nullable=True)
+    erp_requisition_id = Column(String)       # ID returned by ERP after push
+    erp_requisition_number = Column(String)   # Human-readable ERP reference
+    push_url = Column(String)                 # Middleware/ERP endpoint URL
+    push_response = Column(JSON)              # Raw ERP response stored for audit
+    created_at = Column(DateTime, default=datetime.utcnow)
+    pushed_at = Column(DateTime)
+    notes = Column(Text)
+
+    lines = relationship("ProcurementLine", back_populates="requisition",
+                         cascade="all, delete-orphan", order_by="ProcurementLine.line_number")
+
+
+class ProcurementLine(Base):
+    __tablename__ = "procurement_lines"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    requisition_id = Column(String, ForeignKey("procurement_requisitions.id"), nullable=False)
+    material_line_item_id = Column(String, ForeignKey("material_line_items.id"))
+    line_number = Column(Integer, nullable=False)
+
+    # Item details
+    item_description = Column(String, nullable=False)
+    item_category = Column(String)
+    material_type = Column(String)
+
+    # Quantities
+    ai_recommended_qty = Column(Float)        # WasteIQ suggestion (read-only reference)
+    requested_qty = Column(Float, nullable=False)  # Editable by user before push
+    unit_of_measure = Column(String)
+    unit_price = Column(Float)
+    total_amount = Column(Float)
+
+    # Procurement fields
+    need_by_date = Column(DateTime)
+    deliver_to_location = Column(String)
+    requester_name = Column(String)
+    erp_item_code = Column(String)            # ERP-specific item code (optional)
+
+    # Savings reference
+    flat_buffer_qty = Column(Float)           # What industry 15% would have ordered
+    savings_qty = Column(Float)
+    savings_amount = Column(Float)
+
+    requisition = relationship("ProcurementRequisition", back_populates="lines")

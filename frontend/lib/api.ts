@@ -56,3 +56,35 @@ export const oracleApi = {
   pushRequisition: (project_id: string, opts?: { requester_name?: string; deliver_to_location?: string; need_by_date?: string }) =>
     api.post("oracle/push-requisition", { project_id, ...opts }),
 };
+
+// --- Procurement Middleware ---
+export const procurementApi = {
+  stage: (project_id: string, opts?: {
+    erp_type?: string;
+    push_url?: string;
+    default_need_by_days?: number;
+    deliver_to_location?: string;
+    requester_name?: string;
+    notes?: string;
+  }) => api.post(`procurement/stage/${project_id}`, opts ?? {}),
+
+  get: (project_id: string) => api.get(`procurement/${project_id}`),
+
+  updateLine: (line_id: string, data: {
+    requested_qty?: number;
+    need_by_date?: string;
+    deliver_to_location?: string;
+    requester_name?: string;
+    erp_item_code?: string;
+    unit_price?: number;
+  }) => api.put(`procurement/lines/${line_id}`, data),
+
+  push: (requisition_id: string, opts?: {
+    push_url?: string;
+    erp_type?: string;
+    auth_header?: string;
+  }) => api.post(`procurement/push/${requisition_id}`, opts ?? {}),
+
+  exportUrl: (requisition_id: string, format: "json" | "csv") =>
+    `/api/proxy/procurement/export/${requisition_id}?format=${format}`,
+};

@@ -4,10 +4,11 @@ import { useParams, useRouter } from "next/navigation";
 import Navbar from "@/components/navbar";
 import PredictionTable from "@/components/prediction-table";
 import RecommendationPanel from "@/components/recommendation-panel";
-import { projectsApi, predictionsApi, actualsApi, recommendationsApi, oracleApi } from "@/lib/api";
+import ProcurementGrid, { type ProcurementRequisition } from "@/components/procurement-grid";
+import { projectsApi, predictionsApi, actualsApi, recommendationsApi, procurementApi } from "@/lib/api";
 import { isAuthenticated } from "@/lib/auth";
 
-type Tab = "predictions" | "recommendations" | "oracle";
+type Tab = "predictions" | "recommendations" | "procurement";
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,8 +22,12 @@ export default function ProjectDetailPage() {
   const [showActualsForm, setShowActualsForm] = useState(false);
   const [actuals, setActuals] = useState<Record<string, string>>({});
   const [savingActuals, setSavingActuals] = useState(false);
-  const [oracleLoading, setOracleLoading] = useState(false);
-  const [oracleResult, setOracleResult] = useState<any>(null);
+
+  // Procurement state
+  const [requisition, setRequisition] = useState<ProcurementRequisition | null>(null);
+  const [stagingReq, setStagingReq] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState<any>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) { router.push("/login"); return; }
@@ -32,7 +37,10 @@ export default function ProjectDetailPage() {
     ]).then(([projRes, predRes]) => {
       setProject(projRes.data);
       setPredictions(predRes.data);
-      if (predRes.data.length > 0) loadReport();
+      if (predRes.data.length > 0) {
+        loadReport();
+        loadRequisition();
+      }
     }).finally(() => setLoading(false));
   }, [id, router]);
 
@@ -40,6 +48,13 @@ export default function ProjectDetailPage() {
     try {
       const res = await recommendationsApi.get(id);
       setReport(res.data);
+    } catch {}
+  }
+
+  async function loadRequisition() {
+    try {
+      const res = await procurementApi.get(id);
+      setRequisition(res.data);
     } catch {}
   }
 
@@ -72,16 +87,33 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function pushToOracle() {
-    setOracleLoading(true);
-    setOracleResult(null);
+  async function stageRequisition() {
+    setStagingReq(true);
+    setPushResult(null);
     try {
-      const res = await oracleApi.pushRequisition(id);
-      setOracleResult(res.data);
-    } catch (err: any) {
-      setOracleResult({ success: false, error: err?.response?.data?.detail || "Oracle push failed" });
+      const res = await procurementApi.stage(id);
+      setRequisition(res.data);
     } finally {
-      setOracleLoading(false);
+      setStagingReq(false);
+    }
+  }
+
+  async function pushToErp(pushUrl: string, erpType: string, authHeader: string) {
+    if (!requisition) return;
+    setPushing(true);
+    setPushResult(null);
+    try {
+      const res = await procurementApi.push(requisition.id, {
+        push_url: pushUrl || undefined,
+        erp_type: erpType !== "custom" ? erpType : undefined,
+        auth_header: authHeader || undefined,
+      });
+      setPushResult(res.data);
+      setRequisition((prev) => prev ? { ...prev, status: res.data.dry_run ? prev.status : "pushed" } : prev);
+    } catch (err: any) {
+      setPushResult({ success: false, error: err?.response?.data?.detail || "Push failed" });
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -124,7 +156,7 @@ export default function ProjectDetailPage() {
             {([
               { key: "predictions",     label: "Predictions" },
               { key: "recommendations", label: "Recommendations & Savings" },
-              { key: "oracle",          label: "Oracle Fusion" },
+              { key: "procurement",     label: "Procurement" },
             ] as { key: Tab; label: string }[]).map(({ key, label }) => (
               <button
                 key={key}
@@ -173,78 +205,89 @@ export default function ProjectDetailPage() {
           </div>
         )}
 
-        {/* Tab: Oracle Fusion */}
-        {tab === "oracle" && (
-          <div className="card mb-6">
-            <div className="flex items-start justify-between mb-4">
+        {/* Tab: Procurement */}
+        {tab === "procurement" && (
+          <div className="mb-6 space-y-4">
+            <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-semibold text-gray-800 text-lg">Oracle Fusion Procurement</h2>
+                <h2 className="font-semibold text-gray-800 text-lg">ERP Procurement</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  Push WasteIQ-optimized quantities directly as a Purchase Requisition in Oracle Fusion.
+                  Stage AI-optimized quantities as a requisition, edit inline, then push to any ERP or middleware endpoint.
                 </p>
               </div>
-              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">Oracle ERP</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">ERP-Agnostic</span>
+                <button
+                  onClick={stageRequisition}
+                  disabled={stagingReq || predictions.length === 0}
+                  className="btn-secondary text-sm"
+                >
+                  {stagingReq ? "Staging..." : requisition ? "Re-stage from AI" : "Stage Requisition"}
+                </button>
+              </div>
             </div>
 
-            {predictions.length === 0 ? (
-              <p className="text-gray-400 text-sm">Generate predictions first to enable Oracle push.</p>
-            ) : (
-              <>
-                <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm space-y-1">
-                  <p className="font-medium text-gray-700">What will be created in Oracle:</p>
-                  <ul className="text-gray-500 space-y-1 ml-4 list-disc">
-                    <li>Purchase Requisition for <strong>{project.name}</strong></li>
-                    <li><strong>{predictions.length}</strong> line items with AI-optimized quantities</li>
-                    <li>Each line includes predicted waste % and savings vs flat buffer in notes</li>
-                  </ul>
-                </div>
+            {predictions.length === 0 && (
+              <div className="card text-center py-8 text-gray-400">
+                Generate predictions first to enable procurement staging.
+              </div>
+            )}
 
-                <button
-                  onClick={pushToOracle}
-                  disabled={oracleLoading}
-                  className="btn-primary"
-                >
-                  {oracleLoading ? "Pushing to Oracle..." : "Push Purchase Requisition to Oracle Fusion"}
+            {predictions.length > 0 && !requisition && (
+              <div className="card text-center py-10 text-gray-400">
+                <p className="mb-4 text-gray-500">No requisition staged yet.<br />
+                  Click <strong>Stage Requisition</strong> to create an editable procurement grid from AI predictions.
+                </p>
+                <button onClick={stageRequisition} disabled={stagingReq} className="btn-primary">
+                  {stagingReq ? "Staging..." : "Stage Requisition"}
                 </button>
+              </div>
+            )}
 
-                {oracleResult && (
-                  <div className={`mt-4 rounded-lg p-4 ${
-                    oracleResult.success ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"
-                  }`}>
-                    {oracleResult.success ? (
-                      <div className="space-y-2 text-sm">
-                        {oracleResult.dry_run ? (
-                          <>
-                            <p className="font-semibold text-green-700">Dry Run — Oracle credentials not configured</p>
-                            <p className="text-green-600">This is the payload that would be sent to Oracle Fusion:</p>
-                            <pre className="bg-white rounded p-3 text-xs overflow-auto text-gray-700 max-h-64">
-                              {JSON.stringify(oracleResult.payload_preview, null, 2)}
-                            </pre>
-                            <p className="text-gray-500 text-xs">
-                              Add ORACLE_HOST, ORACLE_CLIENT_ID, ORACLE_CLIENT_SECRET, and ORACLE_TOKEN_URL to Vercel environment variables to go live.
-                            </p>
-                          </>
-                        ) : (
-                          <>
-                            <p className="font-semibold text-green-700">Successfully pushed to Oracle Fusion</p>
-                            <p className="text-green-600">Requisition: <strong>{oracleResult.requisition_number}</strong></p>
-                            <p className="text-green-600">{oracleResult.lines_created} lines created</p>
-                            {oracleResult.total_amount && (
-                              <p className="text-green-600">Total: ${oracleResult.total_amount.toLocaleString()}</p>
-                            )}
-                            {oracleResult.oracle_url && (
-                              <a href={oracleResult.oracle_url} target="_blank" rel="noreferrer"
-                                className="text-blue-600 underline">View in Oracle Fusion</a>
-                            )}
-                          </>
-                        )}
-                      </div>
+            {requisition && (
+              <ProcurementGrid
+                requisition={requisition}
+                onRequisitionChange={setRequisition}
+                onPush={pushToErp}
+                pushing={pushing}
+              />
+            )}
+
+            {/* Push result */}
+            {pushResult && (
+              <div className={`rounded-xl p-4 border ${
+                pushResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+              }`}>
+                {pushResult.success ? (
+                  <div className="space-y-2 text-sm">
+                    {pushResult.dry_run ? (
+                      <>
+                        <p className="font-semibold text-green-700">Dry Run — No ERP endpoint configured</p>
+                        <p className="text-green-600 text-xs">This is the standard WasteIQ middleware payload that would be sent:</p>
+                        <pre className="bg-white rounded-lg p-3 text-xs overflow-auto text-gray-700 max-h-72">
+                          {JSON.stringify(pushResult.payload, null, 2)}
+                        </pre>
+                        <p className="text-gray-500 text-xs">
+                          Configure a Push URL in the Push to ERP dialog to go live. Supports Oracle Fusion, SAP, MS Dynamics, or any custom REST endpoint.
+                        </p>
+                      </>
                     ) : (
-                      <p className="text-red-700 text-sm font-medium">{oracleResult.error}</p>
+                      <>
+                        <p className="font-semibold text-green-700">Successfully pushed to ERP</p>
+                        {pushResult.erp_requisition_number && (
+                          <p className="text-green-600">Requisition: <strong>{pushResult.erp_requisition_number}</strong></p>
+                        )}
+                        <p className="text-green-600">{pushResult.lines_pushed} lines pushed</p>
+                        {pushResult.total_amount > 0 && (
+                          <p className="text-green-600">Total: ${pushResult.total_amount.toLocaleString()}</p>
+                        )}
+                      </>
                     )}
                   </div>
+                ) : (
+                  <p className="text-red-700 text-sm font-medium">{pushResult.error}</p>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
